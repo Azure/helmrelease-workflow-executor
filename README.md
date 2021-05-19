@@ -1,7 +1,5 @@
 # orkestra-workflow-executor
 
-[![Build Status](https://dev.azure.com/azure/Orkestra/_apis/build/status/nitishm.orkestra-workflow-executor?branchName=main)](https://dev.azure.com/azure/Orkestra/_build/latest?definitionId=100&branchName=main)
-
 Azure Orkestra's default workflow executor
 
 ## Functionality
