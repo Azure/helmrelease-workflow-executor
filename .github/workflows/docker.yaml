@@ -28,8 +28,6 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{raw}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             latest
       -
         name: Login to DockerHub
