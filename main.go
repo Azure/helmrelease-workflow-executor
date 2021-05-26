@@ -186,3 +186,22 @@ func retry(ctx context.Context, retryable func() error, backoffDuration time.Dur
 		}
 	}
 }
+
+// poll retries the poller function, sleeping for the given backoffDuration
+// The function will return if the poller func() returns true
+// The function will return and exit with code 1 if the context times out
+func poll(ctx context.Context, poller func() bool, backoffDuration time.Duration) {
+	for {
+		if shouldExit := poller(); !shouldExit {
+			select {
+			case <-ctx.Done():
+				log.Fatalf("Failed to complete polling within the timeout")
+			default:
+				time.Sleep(backoffDuration)
+			}
+		} else {
+			// Get out of the polling loop if we have succeeded to execute the function
+			break
+		}
+	}
+}
