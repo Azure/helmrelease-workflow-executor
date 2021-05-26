@@ -89,10 +89,14 @@ func main() {
 	} else if err != nil {
 		log.Infof("Did not find the namespace: %v, creating the namespace...", hr.Namespace)
 		// Create the namespace if it doesn't exist
-		retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval)
+		if err := retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval); err != nil {
+			log.Fatalf("retry got err: %v", err)
+		}
 	} else if temp.Status.Phase == corev1.NamespaceTerminating {
 		log.Infof("Namespace: %v is in a terminating state, retrying to create until the namespace is deleted...", hr.Namespace)
-		retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval)
+		if err := retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval); err != nil {
+			log.Fatalf("retry got err: %v", err)
+		}
 	}
 
 	instance := &fluxhelmv2beta1.HelmRelease{}
@@ -106,7 +110,9 @@ func main() {
 		// This means that the object was not found
 		log.Infof("Did not find the helm release: %v, creating the release...", hr.Name)
 		// Create the HelmRelease if it doesn't exist
-		retry(ctx, func() error { return clientSet.Create(ctx, hr) }, interval)
+		if err := retry(ctx, func() error { return clientSet.Create(ctx, hr) }, interval); err != nil {
+			log.Fatalf("retry got err: %v", err)
+		}
 	} else {
 		instance.Annotations = hr.Annotations
 		instance.Labels = hr.Labels
@@ -114,7 +120,9 @@ func main() {
 
 		log.Infof("Found the helm release: %v, updating the release...", hr.Name)
 		// Update the HelmRelease
-		retry(ctx, func() error { return clientSet.Update(ctx, instance) }, interval)
+		if err := retry(ctx, func() error { return clientSet.Update(ctx, instance) }, interval); err != nil {
+			log.Fatalf("retry got err: %v", err)
+		}
 	}
 
 	identifiers := object.ObjMetadata{
@@ -169,20 +177,32 @@ func desiredStatusNotifierFunc(cancelFunc context.CancelFunc) collector.Observer
 }
 
 // retry retries the passed retryable function, sleeping for the given backoffDuration
-// The function will return and exit with code 1 if the context times out
-func retry(ctx context.Context, retryable func() error, backoffDuration time.Duration) {
-	for {
+// If the context times out while executing the retryable function, an error is returned
+func retry(ctx context.Context, retryable func() error, backoffDuration time.Duration) error {
+	pollingFunc := func() bool {
 		if err := retryable(); err != nil {
 			log.Errorf("Failed to execute the retryable function with: %v", err)
+			return false
+		}
+		return true
+	}
+	return poll(ctx, pollingFunc, backoffDuration)
+}
+
+// poll retries the poller function, sleeping for the given backoffDuration
+// If the poller times out it will return an error
+func poll(ctx context.Context, poller func() bool, backoffDuration time.Duration) error {
+	for {
+		if shouldExit := poller(); !shouldExit {
 			select {
 			case <-ctx.Done():
-				log.Fatalf("Failed to create a new namesapce within the timeout")
+				return fmt.Errorf("failed to complete polling within the timeout")
 			default:
 				time.Sleep(backoffDuration)
 			}
 		} else {
-			// Get out of the retry loop if we have succeeded to execute the function
-			break
+			// Get out of the polling loop if we have succeeded to execute the function
+			return nil
 		}
 	}
 }
