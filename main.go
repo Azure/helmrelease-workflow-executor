@@ -15,7 +15,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
@@ -75,7 +74,7 @@ func main() {
 	}
 	log.Infof("Parsed the action: %v, the timeout: %v and the interval: %v", string(action), timeout.String(), interval.String())
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 	if spec == "" {
 		log.Fatal("Spec is empty, unable to apply an empty spec on the cluster")
@@ -107,15 +106,13 @@ func main() {
 	}
 
 	if action == Install {
-		installAction(ctx, clientSet, config, hr, timeout, interval)
+		installAction(ctx, cancel, clientSet, config, hr, interval)
 	} else if action == Delete {
-		deleteAction(ctx, clientSet, hr, timeout, interval)
+		deleteAction(ctx, cancel, clientSet, hr, timeout, interval)
 	}
 }
 
-func installAction(ctx context.Context, clientSet client.Client, config *rest.Config, hr *fluxhelmv2beta1.HelmRelease, timeout, interval time.Duration) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-
+func installAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, config *rest.Config, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: hr.Namespace,
@@ -179,7 +176,7 @@ func installAction(ctx context.Context, clientSet client.Client, config *rest.Co
 	}
 }
 
-func deleteAction(ctx context.Context, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, timeout, interval time.Duration) {
+func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, timeout, interval time.Duration) {
 	instance := &fluxhelmv2beta1.HelmRelease{}
 	key := client.ObjectKey{
 		Name:      hr.Name,
@@ -188,8 +185,11 @@ func deleteAction(ctx context.Context, clientSet client.Client, hr *fluxhelmv2be
 	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
 		log.Fatalf("Failed to get instance of the helmrelease with %v", err)
 	} else if err != nil {
-		// This means that the object was not found
+		// Unexpectedly, the object that we are trying to delete was not found
+		// If this happens, we will log an error and return
 		log.Errorf("Did not find the helm release: %v", hr.Name)
+		cancel()
+		return
 	} else {
 		instance.Annotations = hr.Annotations
 		instance.Labels = hr.Labels
@@ -197,40 +197,77 @@ func deleteAction(ctx context.Context, clientSet client.Client, hr *fluxhelmv2be
 
 		log.Infof("Found the helm release: %v, deleting the release...", hr.Name)
 		// Delete the HelmRelease
-		retry(ctx, func() error { return clientSet.Delete(ctx, instance) }, interval)
+		if err := retry(ctx, func() error { return clientSet.Delete(ctx, instance) }, interval); err != nil {
+			log.Fatalf("retry got err: %v", err)
+		}
 	}
 
-	if err := PollHelmReleaseDeleted(ctx, clientSet, hr, timeout); err != nil {
-		log.Errorf("Failed to poll the deletion of the helm release with %v", err)
+	pollingFunc := func() bool {
+		instance := &fluxhelmv2beta1.HelmRelease{}
+		key := client.ObjectKey{
+			Name:      hr.Name,
+			Namespace: hr.Namespace,
+		}
 		if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-			log.Fatalf("Failed to get instance of the helmrelease with %v", err)
-		} else if err != nil {
-			log.Errorf("Did not find the helm release: %v, the object is deleted", hr.Name)
-		} else {
-			instance.Annotations = hr.Annotations
-			instance.Labels = hr.Labels
-			instance.Spec = hr.Spec
-
-			log.Infof("Removing the helm release finalizer: %v...", fluxhelmv2beta1.HelmReleaseFinalizer)
-			controllerutil.RemoveFinalizer(instance, fluxhelmv2beta1.HelmReleaseFinalizer)
-			if err := clientSet.Update(ctx, instance); err != nil {
-				log.Fatalf("Failed to update the helmrelease with %v", err)
+			if ctx.Err() == context.DeadlineExceeded {
+				log.Errorf("Timed out polling for the helm release presence")
+			} else {
+				log.Fatalf("Failed to get instance of the helmrelease with %v", err)
 			}
-			if err := PollHelmReleaseDeleted(ctx, clientSet, hr, timeout); err != nil {
-				log.Errorf("Failed to poll the deletion of the helm release with %v", err)
-				log.Infof("Uninstalling the release: %v...", hr.Name)
-				settings := helmcli.New()
-				actionConfig := new(helmaction.Configuration)
-				if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), log.Infof); err != nil {
-					log.Fatalf("Failed to init the helm uninstall action with %v", err)
-				}
-				client := helmaction.NewUninstall(actionConfig)
-				if _, err := client.Run(hr.Name); err != nil {
-					log.Errorf("Failed to uninstall the helm release with %v", err)
-				}
+			return false
+		} else if err != nil {
+			log.Infof("Did not find the helm release: %v, the object is deleted", hr.Name)
+			return true
+		} else {
+			log.Infof("Found the helm release: %v, the object is not deleted", hr.Name)
+			return false
+		}
+	}
+
+	if err := poll(ctx, pollingFunc, time.Second); err != nil {
+		log.Errorf("Failed to poll the deletion of the helm release with %v", err)
+		// The helm release is still not deleted. Force cleanup as the final attempt
+		forceCleanupHelmRelease(clientSet, hr, pollingFunc, timeout)
+	}
+	cancel()
+}
+
+// remove the finalizer from the helm release and wait for it get garbage collected
+// if the helm release is still present, call 'helm uninstall' on it
+func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, poller func() bool, timeout time.Duration) {
+	// Create a new context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	instance := &fluxhelmv2beta1.HelmRelease{}
+	key := client.ObjectKey{
+		Name:      hr.Name,
+		Namespace: hr.Namespace,
+	}
+	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
+		log.Fatalf("Failed to get instance of the helmrelease with %v", err)
+	} else if err != nil {
+		// The helm release was not found after the first failed cleanup attempt
+		log.Errorf("Did not find the helm release: %v, the object is deleted", hr.Name)
+	} else {
+		log.Infof("Removing the helm release finalizer: %v...", fluxhelmv2beta1.HelmReleaseFinalizer)
+		controllerutil.RemoveFinalizer(instance, fluxhelmv2beta1.HelmReleaseFinalizer)
+		if err := clientSet.Update(ctx, instance); err != nil {
+			log.Fatalf("Failed to update the helmrelease with %v", err)
+		}
+		if err := poll(ctx, poller, time.Second); err != nil {
+			log.Errorf("Failed to poll the deletion of the helm release with %v", err)
+			log.Infof("Uninstalling the release: %v...", hr.Name)
+			settings := helmcli.New()
+			actionConfig := new(helmaction.Configuration)
+			if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), log.Infof); err != nil {
+				log.Fatalf("Failed to init the helm uninstall action with %v", err)
+			}
+			client := helmaction.NewUninstall(actionConfig)
+			if _, err := client.Run(hr.Name); err != nil {
+				log.Errorf("Failed to uninstall the helm release with %v", err)
 			}
 		}
 	}
+	cancel()
 }
 
 func PollStatus(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, config *rest.Config, identifiers ...object.ObjMetadata) error {
@@ -267,28 +304,6 @@ func desiredStatusNotifierFunc(cancelFunc context.CancelFunc) collector.Observer
 			cancelFunc()
 		}
 	}
-}
-
-func PollHelmReleaseDeleted(ctx context.Context, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, timeout time.Duration) error {
-	log.Infof("Polling the deletion of the helm release: %v", hr.Name)
-	return wait.Poll(time.Second, timeout,
-		func() (bool, error) {
-			instance := &fluxhelmv2beta1.HelmRelease{}
-			key := client.ObjectKey{
-				Name:      hr.Name,
-				Namespace: hr.Namespace,
-			}
-			if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-				log.Fatalf("Failed to get instance of the helmrelease with %v", err)
-				return false, err
-			} else if err != nil {
-				log.Infof("Did not find the helm release: %v, the object is deleted", hr.Name)
-				return true, nil
-			} else {
-				log.Infof("Found the helm release: %v, the object is not deleted", hr.Name)
-				return false, nil
-			}
-		})
 }
 
 // retry retries the passed retryable function, sleeping for the given backoffDuration
