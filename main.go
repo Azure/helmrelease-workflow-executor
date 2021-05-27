@@ -177,28 +177,26 @@ func installAction(ctx context.Context, cancel context.CancelFunc, clientSet cli
 }
 
 func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, timeout, interval time.Duration) {
+	defer cancel()
 	instance := &fluxhelmv2beta1.HelmRelease{}
 	key := client.ObjectKey{
 		Name:      hr.Name,
 		Namespace: hr.Namespace,
 	}
 	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-		log.Fatalf("Failed to get instance of the helmrelease with %v", err)
+		log.Errorf("Failed to get instance of the helmrelease with %v", err)
+		return
 	} else if err != nil {
 		// Unexpectedly, the object that we are trying to delete was not found
 		// If this happens, we will log an error and return
 		log.Errorf("Did not find the helm release: %v", hr.Name)
-		cancel()
 		return
 	} else {
-		instance.Annotations = hr.Annotations
-		instance.Labels = hr.Labels
-		instance.Spec = hr.Spec
-
 		log.Infof("Found the helm release: %v, deleting the release...", hr.Name)
 		// Delete the HelmRelease
-		if err := retry(ctx, func() error { return clientSet.Delete(ctx, instance) }, interval); err != nil {
-			log.Fatalf("retry got err: %v", err)
+		if err := retry(ctx, func() error { return clientSet.Delete(ctx, hr) }, interval); err != nil {
+			log.Errorf("retry got err: %v", err)
+			return
 		}
 	}
 
@@ -209,11 +207,7 @@ func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet clie
 			Namespace: hr.Namespace,
 		}
 		if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-			if ctx.Err() == context.DeadlineExceeded {
-				log.Errorf("Timed out polling for the helm release presence")
-			} else {
-				log.Fatalf("Failed to get instance of the helmrelease with %v", err)
-			}
+			log.Errorf("Failed to get instance of the helmrelease with %v", err)
 			return false
 		} else if err != nil {
 			log.Infof("Did not find the helm release: %v, the object is deleted", hr.Name)
@@ -227,47 +221,43 @@ func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet clie
 	if err := poll(ctx, pollingFunc, time.Second); err != nil {
 		log.Errorf("Failed to poll the deletion of the helm release with %v", err)
 		// The helm release is still not deleted. Force cleanup as the final attempt
-		forceCleanupHelmRelease(clientSet, hr, pollingFunc, timeout)
+		forceCleanupHelmRelease(clientSet, hr, interval)
 	}
-	cancel()
 }
 
-// remove the finalizer from the helm release and wait for it get garbage collected
-// if the helm release is still present, call 'helm uninstall' on it
-func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, poller func() bool, timeout time.Duration) {
-	// Create a new context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+// remove the finalizer from the helm release and execute force uninstall
+func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+	// Create a new context
+	ctx := context.Background()
 	instance := &fluxhelmv2beta1.HelmRelease{}
 	key := client.ObjectKey{
 		Name:      hr.Name,
 		Namespace: hr.Namespace,
 	}
 	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-		log.Fatalf("Failed to get instance of the helmrelease with %v", err)
+		log.Errorf("Failed to get instance of the helmrelease with %v", err)
 	} else if err != nil {
 		// The helm release was not found after the first failed cleanup attempt
 		log.Errorf("Did not find the helm release: %v, the object is deleted", hr.Name)
 	} else {
 		log.Infof("Removing the helm release finalizer: %v...", fluxhelmv2beta1.HelmReleaseFinalizer)
 		controllerutil.RemoveFinalizer(instance, fluxhelmv2beta1.HelmReleaseFinalizer)
-		if err := clientSet.Update(ctx, instance); err != nil {
-			log.Fatalf("Failed to update the helmrelease with %v", err)
+		if err := retry(ctx, func() error { return clientSet.Update(ctx, instance) }, interval); err != nil {
+			log.Errorf("retry got err: %v", err)
+			return
 		}
-		if err := poll(ctx, poller, time.Second); err != nil {
-			log.Errorf("Failed to poll the deletion of the helm release with %v", err)
-			log.Infof("Uninstalling the release: %v...", hr.Name)
-			settings := helmcli.New()
-			actionConfig := new(helmaction.Configuration)
-			if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), log.Infof); err != nil {
-				log.Fatalf("Failed to init the helm uninstall action with %v", err)
-			}
-			client := helmaction.NewUninstall(actionConfig)
-			if _, err := client.Run(hr.Name); err != nil {
-				log.Errorf("Failed to uninstall the helm release with %v", err)
-			}
+		log.Infof("Uninstalling the release: %v...", hr.Name)
+		settings := helmcli.New()
+		actionConfig := new(helmaction.Configuration)
+		if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), log.Infof); err != nil {
+			log.Errorf("Failed to init the helm uninstall action with %v", err)
+			return
+		}
+		client := helmaction.NewUninstall(actionConfig)
+		if _, err := client.Run(hr.Name); err != nil {
+			log.Errorf("Failed to uninstall the helm release with %v", err)
 		}
 	}
-	cancel()
 }
 
 func PollStatus(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, config *rest.Config, identifiers ...object.ObjMetadata) error {
