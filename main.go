@@ -241,9 +241,10 @@ func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRe
 		log.Errorf("Did not find the helm release: %v, the object is deleted", hr.Name)
 	} else {
 		log.Infof("Removing the helm release finalizer: %v...", fluxhelmv2beta1.HelmReleaseFinalizer)
+		patch := client.MergeFrom(instance.DeepCopy())
 		controllerutil.RemoveFinalizer(instance, fluxhelmv2beta1.HelmReleaseFinalizer)
-		if err := retry(ctx, func() error { return clientSet.Update(ctx, instance) }, interval); err != nil {
-			log.Errorf("retry got err: %v", err)
+		if err := clientSet.Patch(ctx, instance, patch); err != nil {
+			log.Errorf("Failed to patch the helmrelease with %v", err)
 			return
 		}
 		log.Infof("Uninstalling the release: %v...", hr.Name)
