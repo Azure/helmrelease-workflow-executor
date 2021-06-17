@@ -1,4 +1,4 @@
-module github.com/Azure/orkestra-workflow-executor
+module github.com/Azure/orkestra-workflow-executor/default
 
 go 1.16
 

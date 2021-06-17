@@ -1,36 +1,52 @@
 
-# Image URL to use all building/pushing image targets
-IMG ?= azureorkestra/executor:latest
+EXECUTORS = \
+	default \
+	keptn \
 
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-
-all: build 
+all:
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor; \
+	done
 
 # Run tests
-test: fmt vet 
-	go test ./... -coverprofile cover.out
+test:
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor test; \
+	done
 
 # Build manager binary
-build: fmt vet
-	go build -o bin/executor main.go
+build: 
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor build; \
+	done
 
 # Run go fmt against code
 fmt:
-	go fmt ./...
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor fmt; \
+	done
 
 # Run go vet against code
 vet:
-	go vet ./...
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor vet; \
+	done
 
 # Build the docker image
-docker-build: test
-	docker build . -t ${IMG}
+docker-build: 
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor docker-build; \
+	done
 
 # Push the docker image
 docker-push:
-	docker push ${IMG}
+	for executor in $(EXECUTORS); \
+	do \
+		$(MAKE) -C $$executor docker-push; \
+	done

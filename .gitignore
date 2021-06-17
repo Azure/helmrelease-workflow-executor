@@ -30,15 +30,15 @@ debug
 [._]sw[a-p]
 
 # IntelliJ / Goland
-.idea/
-.vscode/
+**/.idea/
+**/.vscode/
 
 # Emacs
 *~
 *#*
 
-/bin/
-build/
+**/bin
+**/build
 .dev/
 .env
 _dist/
