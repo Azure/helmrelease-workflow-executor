@@ -1,6 +1,7 @@
 package packager
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -79,7 +80,7 @@ func Test_helm_Package(t *testing.T) {
 }
 
 func defaultHelmRelease(t *testing.T) *fluxhelmv2beta1.HelmRelease {
-	data, err := os.ReadFile("testwith/helmrelease.yaml")
+	data, err := ioutil.ReadFile("testwith/helmrelease.yaml")
 	if err != nil {
 		t.Fatalf("failed to read default helmrelease : %v", err)
 	}
