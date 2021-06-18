@@ -5,10 +5,19 @@ on:
   pull_request:
     branches: [main]
 jobs:
-  golangci:
+  golangci-default:
     name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: golangci-lint
+        working-directory: ./default
+        uses: golangci/golangci-lint-action@v2
+  golangci-keptn:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        working-directory: ./default
         uses: golangci/golangci-lint-action@v2
