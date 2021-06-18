@@ -1,4 +1,4 @@
-package packager
+package main
 
 import (
 	"io/ioutil"
@@ -19,14 +19,14 @@ func Test_helm_Package(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		h       *helm
+		h       *Helm
 		args    args
 		want    string
 		wantErr bool
 	}{
 		{
 			name: "helmrelease",
-			h: &helm{
+			h: &Helm{
 				loc: testLoc,
 			},
 			args: args{
@@ -37,7 +37,7 @@ func Test_helm_Package(t *testing.T) {
 		},
 		{
 			name: "not a helmrelease",
-			h: &helm{
+			h: &Helm{
 				loc: testLoc,
 			},
 			args: args{
@@ -54,7 +54,7 @@ func Test_helm_Package(t *testing.T) {
 		},
 		{
 			name: "not a valid object",
-			h: &helm{
+			h: &Helm{
 				loc: testLoc,
 			},
 			args: args{
@@ -66,7 +66,7 @@ func Test_helm_Package(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &helm{loc: tt.h.loc}
+			h := &Helm{loc: tt.h.loc}
 			got, err := h.Package(tt.args.resource)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("helm.Package() error = %v, wantErr %v", err, tt.wantErr)

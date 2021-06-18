@@ -3,7 +3,6 @@ module github.com/Azure/orkestra-workflow-executor/keptn
 go 1.16
 
 require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fluxcd/helm-controller/api v0.10.0
 	github.com/sirupsen/logrus v1.7.0
 	gopkg.in/yaml.v2 v2.4.0 // indirect
