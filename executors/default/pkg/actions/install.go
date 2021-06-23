@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func Install(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+func Install(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) error {
 	defer cancel()
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -26,17 +26,17 @@ func Install(ctx context.Context, cancel context.CancelFunc, clientSet client.Cl
 
 	temp := &corev1.Namespace{}
 	if err := clientSet.Get(ctx, client.ObjectKeyFromObject(ns), temp); client.IgnoreNotFound(err) != nil {
-		log.Fatalf("Failed to get instance of the namespace with %v", err)
+		return fmt.Errorf("failed to get instance of the namespace: %w", err)
 	} else if err != nil {
 		log.Infof("Did not find the namespace: %v, creating the namespace...", hr.Namespace)
 		// Create the namespace if it doesn't exist
 		if err := status.Retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval); err != nil {
-			log.Fatalf("retry got err: %v", err)
+			return fmt.Errorf("retry got error %w", err)
 		}
 	} else if temp.Status.Phase == corev1.NamespaceTerminating {
 		log.Infof("Namespace: %v is in a terminating state, retrying to create until the namespace is deleted...", hr.Namespace)
 		if err := status.Retry(ctx, func() error { return clientSet.Create(ctx, ns) }, interval); err != nil {
-			log.Fatalf("retry got err: %v", err)
+			return fmt.Errorf("retry got error: %w", err)
 		}
 	}
 
@@ -61,11 +61,12 @@ func Install(ctx context.Context, cancel context.CancelFunc, clientSet client.Cl
 		return nil
 	}
 	if err := status.Retry(ctx, func() error { return createOrUpdateFunc() }, interval); err != nil {
-		log.Fatalf("retry got err: %v", err)
+		return fmt.Errorf("retry got error: %w", err)
 	}
 	if err := pollStatus(ctx, clientSet, types.NamespacedName{Name: hr.Name, Namespace: hr.Namespace}, interval, 5); err != nil {
-		log.Fatalf("%v", err)
+		return fmt.Errorf("failed to poll status with: %w", err)
 	}
+	return nil
 }
 
 func pollStatus(ctx context.Context, clientSet client.Client, key types.NamespacedName, interval time.Duration, retrySeconds int) error {

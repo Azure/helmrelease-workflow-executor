@@ -92,8 +92,12 @@ func main() {
 	}
 
 	if action == Install {
-		actions.Install(ctx, cancel, clientSet, hr, interval)
+		if err := actions.Install(ctx, cancel, clientSet, hr, interval); err != nil {
+			log.Fatalf("failed to install the helm release: %v", err)
+		}
 	} else if action == Delete {
-		actions.Delete(ctx, cancel, clientSet, hr, interval)
+		if err := actions.Delete(ctx, cancel, clientSet, hr, interval); err != nil {
+			log.Fatalf("failed to delete the helm release: %v", err)
+		}
 	}
 }

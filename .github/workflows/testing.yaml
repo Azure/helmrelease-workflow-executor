@@ -28,7 +28,6 @@ jobs:
             ${{ runner.os }}-go-
       - run: |
           make test
-          go test -v ./... -coverprofile coverage.txt
         working-directory: ${{env.working-directory}}
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1

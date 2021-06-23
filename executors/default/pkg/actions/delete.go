@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"fmt"
 	"github.com/Azure/orkestra-workflow-executor/executors/default/pkg/status"
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 	log "github.com/sirupsen/logrus"
@@ -13,7 +14,7 @@ import (
 	"time"
 )
 
-func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) error {
 	defer cancel()
 	instance := &fluxhelmv2beta1.HelmRelease{}
 	key := client.ObjectKey{
@@ -21,19 +22,16 @@ func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Cli
 		Namespace: hr.Namespace,
 	}
 	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-		log.Errorf("Failed to get instance of the helmrelease with %v", err)
-		return
+		return fmt.Errorf("failed to get instance of the helm release with: %w", err)
 	} else if err != nil {
 		// Unexpectedly, the object that we are trying to delete was not found
 		// If this happens, we will log an error and return
-		log.Errorf("Did not find the helm release: %v", hr.Name)
-		return
+		return fmt.Errorf("did not find the helm release %s with: %w", hr.Name, err)
 	} else {
 		log.Infof("Found the helm release: %v, deleting the release...", hr.Name)
 		// Delete the HelmRelease
 		if err := status.Retry(ctx, func() error { return clientSet.Delete(ctx, hr) }, interval); err != nil {
-			log.Errorf("retry got err: %v", err)
-			return
+			return fmt.Errorf("retry got error: %w", err)
 		}
 	}
 
@@ -58,12 +56,13 @@ func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Cli
 	if err := status.Poll(ctx, pollingFunc, time.Second*5); err != nil {
 		log.Errorf("Failed to poll the deletion of the helm release with %v", err)
 		// The helm release is still not deleted. Force cleanup as the final attempt
-		forceCleanupHelmRelease(clientSet, hr, interval)
+		forceCleanupHelmRelease(clientSet, hr)
 	}
+	return nil
 }
 
 // remove the finalizer from the helm release and execute force uninstall
-func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease) {
 	// Create a new context
 	ctx := context.Background()
 	instance := &fluxhelmv2beta1.HelmRelease{}
