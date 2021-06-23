@@ -4,6 +4,7 @@ WORKDIR /workspace
 
 COPY go.mod go.mod
 COPY go.sum go.sum
+COPY pkg pkg
 RUN go mod download
 
 COPY main.go main.go

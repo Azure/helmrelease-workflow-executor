@@ -6,6 +6,8 @@ on:
     branches: [main]
 jobs:
   testing:
+    env:
+      working-directory: ./executors/default
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -25,8 +27,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - run: |
-          go test -v ./... -coverprofile coverage.txt
+          make test
+        working-directory: ${{env.working-directory}}
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
           file: ./coverage.txt
+          working-directory: ${{env.working-directory}}
