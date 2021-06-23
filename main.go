@@ -5,27 +5,21 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	apimetav1 "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
 	"time"
 
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
+	"github.com/fluxcd/pkg/apis/meta"
 	log "github.com/sirupsen/logrus"
 	helmaction "helm.sh/helm/v3/pkg/action"
 	helmcli "helm.sh/helm/v3/pkg/cli"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/polling"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/aggregator"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/collector"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/polling/event"
-	"sigs.k8s.io/cli-utils/pkg/kstatus/status"
-	"sigs.k8s.io/cli-utils/pkg/object"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
 )
@@ -106,13 +100,14 @@ func main() {
 	}
 
 	if action == Install {
-		installAction(ctx, cancel, clientSet, config, hr, interval)
+		installAction(ctx, cancel, clientSet, hr, interval)
 	} else if action == Delete {
-		deleteAction(ctx, cancel, clientSet, hr, timeout, interval)
+		deleteAction(ctx, cancel, clientSet, hr, interval)
 	}
 }
 
-func installAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, config *rest.Config, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+func installAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
+	defer cancel()
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: hr.Namespace,
@@ -135,48 +130,35 @@ func installAction(ctx context.Context, cancel context.CancelFunc, clientSet cli
 		}
 	}
 
-	instance := &fluxhelmv2beta1.HelmRelease{}
-	key := client.ObjectKey{
-		Name:      hr.Name,
-		Namespace: hr.Namespace,
-	}
-	if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
-		log.Fatalf("Failed to get instance of the helmrelease with %v", err)
-	} else if err != nil {
-		// This means that the object was not found
-		log.Infof("Did not find the helm release: %v, creating the release...", hr.Name)
-		// Create the HelmRelease if it doesn't exist
-		if err := retry(ctx, func() error { return clientSet.Create(ctx, hr) }, interval); err != nil {
-			log.Fatalf("retry got err: %v", err)
-		}
-	} else {
-		instance.Annotations = hr.Annotations
-		instance.Labels = hr.Labels
-		instance.Spec = hr.Spec
-
-		log.Infof("Found the helm release: %v, updating the release...", hr.Name)
-		// Update the HelmRelease
-		if err := retry(ctx, func() error { return clientSet.Update(ctx, instance) }, interval); err != nil {
-			log.Fatalf("retry got err: %v", err)
-		}
-	}
-
-	identifiers := object.ObjMetadata{
-		Namespace: hr.Namespace,
-		Name:      hr.Name,
-		GroupKind: schema.GroupKind{
-			Group: fluxhelmv2beta1.GroupVersion.Group,
-			Kind:  fluxhelmv2beta1.HelmReleaseKind,
+	instance := &fluxhelmv2beta1.HelmRelease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hr.Name,
+			Namespace: hr.Namespace,
 		},
 	}
-
-	// We give the poller two minutes before we time it out
-	if err := PollStatus(ctx, cancel, clientSet, config, identifiers); err != nil {
+	createOrUpdateFunc := func() error {
+		result, err := controllerutil.CreateOrUpdate(ctx, clientSet, instance, func() error {
+			instance.Annotations = hr.Annotations
+			instance.Labels = hr.Labels
+			instance.Spec = hr.Spec
+			return nil
+		})
+		if err != nil {
+			log.Errorf("failed to create or update the helm release with: %v", err)
+			return err
+		}
+		log.Infof("succeeded creating or updating the helm release %s with the result %s", hr.Name, result)
+		return nil
+	}
+	if err := retry(ctx, func() error { return createOrUpdateFunc() }, interval); err != nil {
+		log.Fatalf("retry got err: %v", err)
+	}
+	if err := PollStatus(ctx, clientSet, types.NamespacedName{Name: hr.Name, Namespace: hr.Namespace}, interval, 5); err != nil {
 		log.Fatalf("%v", err)
 	}
 }
 
-func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, timeout, interval time.Duration) {
+func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration) {
 	defer cancel()
 	instance := &fluxhelmv2beta1.HelmRelease{}
 	key := client.ObjectKey{
@@ -200,7 +182,7 @@ func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet clie
 		}
 	}
 
-	pollingFunc := func() bool {
+	pollingFunc := func(done chan<- bool) {
 		instance := &fluxhelmv2beta1.HelmRelease{}
 		key := client.ObjectKey{
 			Name:      hr.Name,
@@ -208,17 +190,17 @@ func deleteAction(ctx context.Context, cancel context.CancelFunc, clientSet clie
 		}
 		if err := clientSet.Get(ctx, key, instance); client.IgnoreNotFound(err) != nil {
 			log.Errorf("Failed to get instance of the helmrelease with %v", err)
-			return false
+			return
 		} else if err != nil {
 			log.Infof("Did not find the helm release: %v, the object is deleted", hr.Name)
-			return true
+			done <- true
 		} else {
 			log.Infof("Found the helm release: %v, the object is not deleted", hr.Name)
-			return false
+			return
 		}
 	}
 
-	if err := poll(ctx, pollingFunc, time.Second); err != nil {
+	if err := poll(ctx, pollingFunc, time.Second*5); err != nil {
 		log.Errorf("Failed to poll the deletion of the helm release with %v", err)
 		// The helm release is still not deleted. Force cleanup as the final attempt
 		forceCleanupHelmRelease(clientSet, hr, interval)
@@ -261,69 +243,72 @@ func forceCleanupHelmRelease(clientSet client.Client, hr *fluxhelmv2beta1.HelmRe
 	}
 }
 
-func PollStatus(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, config *rest.Config, identifiers ...object.ObjMetadata) error {
-	defer cancel()
+func PollStatus(ctx context.Context, clientSet client.Client, key types.NamespacedName, interval time.Duration, retrySeconds int) error {
+	statusPoller := func(done chan<- bool) {
+		instance := &fluxhelmv2beta1.HelmRelease{}
+		if err := clientSet.Get(ctx, key, instance); err != nil {
+			log.Infof("failed to get the instance %s from the api server", key.Name)
+			return
+		}
+		if instance.Generation != instance.Status.ObservedGeneration {
+			log.Infof("observed generation and current generation do not match for instance %s", key.Name)
+			return
+		}
+		conditions := instance.GetStatusConditions()
+		readyCondition := apimetav1.FindStatusCondition(*conditions, "Ready")
+		if readyCondition == nil {
+			log.Infof("cannot find a ready condition")
+			return
+		}
 
-	restMapper, err := apiutil.NewDynamicRESTMapper(config)
-	if err != nil {
-		return err
+		var i int
+		// Attempt to get the same status for 5 consecutive seconds
+		for i = 0; i < retrySeconds; i++ {
+			if readyCondition.Status != metav1.ConditionTrue || readyCondition.Reason != meta.ReconciliationSucceededReason {
+				log.Infof("did not reach a ready condition")
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		if i == retrySeconds {
+			done <- true
+		}
 	}
-	poller := polling.NewStatusPoller(clientSet, restMapper)
-	eventsChan := poller.Poll(ctx, identifiers, polling.Options{PollInterval: time.Second})
 
-	coll := collector.NewResourceStatusCollector(identifiers)
-	done := coll.ListenWithObserver(eventsChan, desiredStatusNotifierFunc(cancel))
-
-	<-done
-
-	if coll.Error != nil || ctx.Err() == context.DeadlineExceeded {
+	// Poll the helm release condition consecutively until the timeout
+	if err := poll(ctx, statusPoller, interval); err != nil {
 		return fmt.Errorf("timed out waiting for condition")
 	}
-
 	return nil
-}
-
-func desiredStatusNotifierFunc(cancelFunc context.CancelFunc) collector.ObserverFunc {
-	return func(rsc *collector.ResourceStatusCollector, _ event.Event) {
-		var rss []*event.ResourceStatus
-		for _, rs := range rsc.ResourceStatuses {
-			rss = append(rss, rs)
-		}
-		aggStatus := aggregator.AggregateStatus(rss, status.CurrentStatus)
-		log.Infof("Received an event from the helm release, aggregated status is: %v", aggStatus.String())
-		if aggStatus == status.CurrentStatus {
-			cancelFunc()
-		}
-	}
 }
 
 // retry retries the passed retryable function, sleeping for the given backoffDuration
 // If the context times out while executing the retryable function, an error is returned
 func retry(ctx context.Context, retryable func() error, backoffDuration time.Duration) error {
-	pollingFunc := func() bool {
+	pollingFunc := func(done chan<- bool) {
 		if err := retryable(); err != nil {
 			log.Errorf("Failed to execute the retryable function with: %v", err)
-			return false
 		}
-		return true
+		log.Infof("successfully completed the retry function")
+		done <- true
 	}
 	return poll(ctx, pollingFunc, backoffDuration)
 }
 
 // poll retries the poller function, sleeping for the given backoffDuration
 // If the poller times out it will return an error
-func poll(ctx context.Context, poller func() bool, backoffDuration time.Duration) error {
+func poll(ctx context.Context, poller func(chan<- bool), backoffDuration time.Duration) error {
+	done := make(chan bool)
 	for {
-		if shouldExit := poller(); !shouldExit {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("failed to complete polling within the timeout")
-			default:
-				time.Sleep(backoffDuration)
-			}
-		} else {
-			// Get out of the polling loop if we have succeeded to execute the function
+		go poller(done)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("failed to complete polling within the timeout")
+		case <-done:
+			log.Infof("successfully completed the polling function")
 			return nil
+		default:
+			time.Sleep(backoffDuration)
 		}
 	}
 }
