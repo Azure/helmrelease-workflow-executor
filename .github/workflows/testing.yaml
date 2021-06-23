@@ -25,7 +25,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
       - run: |
-          go test -v ./... -coverprofile coverage.txt
+          go test -v ./executors/default/... -coverprofile coverage.txt
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:

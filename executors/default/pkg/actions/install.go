@@ -70,6 +70,11 @@ func Install(ctx context.Context, cancel context.CancelFunc, clientSet client.Cl
 
 func pollStatus(ctx context.Context, clientSet client.Client, key types.NamespacedName, interval time.Duration, retrySeconds int) error {
 	statusPoller := func(done chan<- bool) {
+		start := time.Now()
+		defer func() {
+			log.Infof("polling status finished execution in %v", time.Now().Sub(start))
+		}()
+
 		instance := &fluxhelmv2beta1.HelmRelease{}
 		if err := clientSet.Get(ctx, key, instance); err != nil {
 			log.Infof("failed to get the instance %s from the api server", key.Name)
