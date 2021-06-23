@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/fluxcd/helm-controller/api v0.10.0
+	github.com/fluxcd/pkg/apis/meta v0.9.0
 	github.com/sirupsen/logrus v1.7.0
 	helm.sh/helm/v3 v3.5.4
 	k8s.io/api v0.21.0
