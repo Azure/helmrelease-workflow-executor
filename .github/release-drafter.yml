@@ -1,3 +1,7 @@
+template: |
+  ## What’s Changed
+
+  $CHANGES
 categories:
   - title: '🚀 Features'
     labels:
@@ -9,7 +13,3 @@ categories:
       - 'bug'
   - title: '🧰 Maintenance'
     label: 'chore'
-template: |
-  ## Changes
-
-  $CHANGES
