@@ -3,12 +3,13 @@ package helm
 import (
 	"errors"
 	"os"
+	"path/filepath"
 
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
-	yamlv2 "gopkg.in/yaml.v2"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 )
 
 type Helm struct {
@@ -49,7 +50,7 @@ func buildChart(hr *fluxhelmv2beta1.HelmRelease) (*chart.Chart, error) {
 	}
 
 	chartname := hr.Name
-	data, err := yamlv2.Marshal(hr)
+	data, err := yaml.Marshal(hr)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +65,7 @@ func buildChart(hr *fluxhelmv2beta1.HelmRelease) (*chart.Chart, error) {
 			APIVersion:  chart.APIVersionV2,
 		},
 		Templates: []*chart.File{{
-			Name: hr.Name,
+			Name: filepath.Join("templates", hr.Name) + ".yaml",
 			Data: data,
 		}},
 	}
