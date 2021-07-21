@@ -1,0 +1,26 @@
+---
+spec_version: '0.1.1'
+comparison:
+  compare_with: "several_results"
+  number_of_comparison_results: 3
+  include_result_with_score: "pass"
+  aggregate_function: avg
+objectives:
+  - sli: response_time_p95
+    pass:             
+      - criteria:
+          - "<=+25%"    # relative values
+          - "<300"      # absolute values
+    warning:          
+      - criteria:
+          - "<=600"
+  - sli: error_rate
+    pass:
+      - criteria: 
+         - "<=5"
+    key_sli: true       # if not met, evaluation fails
+  - sli: throughput
+  - sli: response_time_p50
+total_score:
+  pass: "90%"
+  warning: "75%"

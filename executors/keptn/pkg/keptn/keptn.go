@@ -9,6 +9,7 @@ import (
 	keptnutils "github.com/keptn/go-utils/pkg/api/utils"
 	"github.com/keptn/go-utils/pkg/common/fileutils"
 	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
+	"github.com/labstack/gommon/log"
 
 	apimodels "github.com/keptn/go-utils/pkg/api/models"
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
@@ -22,14 +23,18 @@ type Git struct {
 
 type Keptn struct {
 	url             string
-	git             Git
+	git             *Git
 	token           *string
 	apiHandler      *apiutils.APIHandler
 	resourceHandler *apiutils.ResourceHandler
 	projectHandler  *apiutils.ProjectHandler
 }
 
-func New(url, namespace, secretName string, git Git) (*Keptn, error) {
+func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
+	if git == nil {
+		log.Printf("No upstream git server provided. Using in-built git server")
+	}
+
 	// get token from secret
 	t, err := keptnk8sutils.GetKeptnAPITokenFromSecret(false, namespace, secretName)
 	if err != nil {
@@ -40,7 +45,7 @@ func New(url, namespace, secretName string, git Git) (*Keptn, error) {
 	auth := keptnutils.NewAuthenticatedAuthHandler(url, t, "x-token", nil, "http")
 	if _, kErr := auth.Authenticate(); kErr != nil {
 		err = fmt.Errorf("failed to authenticate with err: %v", kErr)
-		fmt.Printf("%#v", kErr.GetMessage())
+		log.Errorf("failed to authenticate with err : %v", kErr.GetMessage())
 		return nil, err
 	}
 
@@ -60,13 +65,18 @@ func New(url, namespace, secretName string, git Git) (*Keptn, error) {
 
 func (k *Keptn) CreateProject(project string, shipyard []byte) error {
 	encodedShipyardContent := base64.StdEncoding.EncodeToString(shipyard)
-	if _, kErr := k.apiHandler.CreateProject(apimodels.CreateProject{
-		GitRemoteURL: k.git.URL,
-		GitToken:     k.git.Token,
-		GitUser:      k.git.User,
-		Name:         &project,
-		Shipyard:     &encodedShipyardContent,
-	}); kErr != nil {
+	createProject := apimodels.CreateProject{
+		Name:     &project,
+		Shipyard: &encodedShipyardContent,
+	}
+
+	if k.git != nil {
+		createProject.GitRemoteURL = k.git.URL
+		createProject.GitToken = k.git.Token
+		createProject.GitUser = k.git.User
+	}
+
+	if _, kErr := k.apiHandler.CreateProject(createProject); kErr != nil {
 		return fmt.Errorf("failed to create project with err: %v", kErr.GetMessage())
 	}
 
@@ -114,12 +124,17 @@ func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, localRe
 }
 
 func (k *Keptn) getProjectStages(project string) ([]*apimodels.Stage, error) {
-	p, kErr := k.projectHandler.GetProject(apimodels.Project{
-		GitRemoteURI: k.git.URL,
-		GitToken:     k.git.Token,
-		GitUser:      k.git.User,
-		ProjectName:  project,
-	})
+	proj := apimodels.Project{
+		ProjectName: project,
+	}
+
+	if k.git != nil {
+		proj.GitRemoteURI = k.git.URL
+		proj.GitToken = k.git.Token
+		proj.GitUser = k.git.User
+	}
+
+	p, kErr := k.projectHandler.GetProject(proj)
 	if kErr != nil {
 		return nil, fmt.Errorf("failed to get project with err: %v", kErr.GetMessage())
 	}

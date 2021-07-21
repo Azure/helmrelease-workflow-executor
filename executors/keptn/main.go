@@ -1,14 +1,17 @@
 package main
 
 import (
-	"encoding/base64"
+	"context"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
-	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
+	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/actions"
+	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/keptn"
+
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,19 +36,22 @@ func ParseExecutorAction(s string) (ExecutorAction, error) {
 }
 
 func main() {
-	var spec string
+	var cmName, cmNamespace string
+	var keptnURL, keptnNS, keptnSecretName string
+	var addResourcePath string
 	var actionStr string
 	var timeoutStr string
 	var intervalStr string
-	var gitUsername string
-	var gitPassword string
 
-	flag.StringVar(&spec, "spec", "", "Spec of the helmrelease object to apply")
+	flag.StringVar(&cmNamespace, "cm-namespace", "", "namespace of the configmap containing the shipyard.yaml and other resources")
+	flag.StringVar(&cmName, "cm-name", "", "name of the configmap containing the shipyard.yaml and other resources")
+	flag.StringVar(&addResourcePath, "add-resource-path", ".", "the target path to stage the resources from the configmap")
+	flag.StringVar(&keptnURL, "keptn-url", "", "keptn API service URL")
+	flag.StringVar(&keptnNS, "keptn-namespace", "", "keptn API service namespace")
+	flag.StringVar(&keptnSecretName, "keptn-secret", "", "keptn API service secret that contains the X_TOKEN")
 	flag.StringVar(&actionStr, "action", "", "Action to perform on the helmrelease object. Must be either install or delete")
 	flag.StringVar(&timeoutStr, "timeout", "5m", "Timeout for the execution of the argo workflow task")
 	flag.StringVar(&intervalStr, "interval", "10s", "Retry interval for the all actions by the executor")
-	flag.StringVar(&gitUsername, "git-username", "", "Git username for the gitea user")
-	flag.StringVar(&gitPassword, "git-password", "", "Git password for the gitea user")
 	flag.Parse()
 
 	action, err := ParseExecutorAction(actionStr)
@@ -62,22 +68,7 @@ func main() {
 	}
 	log.Infof("Parsed the action: %v, the timeout: %v and the interval: %v", string(action), timeout.String(), interval.String())
 
-	// ctx, cancel := context.WithTimeout(context.Background(), timeout)
-
-	if spec == "" {
-		log.Fatal("Spec is empty, unable to apply an empty spec on the cluster")
-	}
-
-	decodedSpec, err := base64.StdEncoding.DecodeString(spec)
-	if err != nil {
-		log.Fatalf("Failed to decode the string as a base64 string; got the string %v", spec)
-	}
-	log.Info("Successfully base64 decoded the spec")
-
-	hr := &fluxhelmv2beta1.HelmRelease{}
-	if err := yaml.Unmarshal(decodedSpec, hr); err != nil {
-		log.Fatalf("Failed to decode the spec into yaml with the err %v", err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{})
 	config, err := kubeConfig.ClientConfig()
@@ -85,22 +76,32 @@ func main() {
 		log.Fatalf("Failed to initialize the client config with %v", err)
 	}
 	k8sScheme := scheme.Scheme
-	if err := fluxhelmv2beta1.AddToScheme(k8sScheme); err != nil {
-		log.Fatalf("Failed to add the flux helm scheme to the configuration scheme with %v", err)
-	}
-	// clientSet, err := client.New(config, client.Options{Scheme: k8sScheme})
-	_, err = client.New(config, client.Options{Scheme: k8sScheme})
+
+	clientSet, err := client.New(config, client.Options{Scheme: k8sScheme})
 	if err != nil {
 		log.Fatalf("Failed to create the clientset with the given config with %v", err)
 	}
 
-	// if action == Install {
-	// 	if err := actions.Install(ctx, cancel, clientSet, hr, interval); err != nil {
-	// 		log.Fatalf("failed to install the helm release: %v", err)
-	// 	}
-	// } else if action == Delete {
-	// 	if err := actions.Delete(ctx, cancel, clientSet, hr, interval); err != nil {
-	// 		log.Fatalf("failed to delete the helm release: %v", err)
-	// 	}
-	// }
+	keptnCli, err := keptn.New(keptnURL, keptnNS, keptnSecretName, nil)
+	if err != nil {
+		log.Fatalf("Failed to create the keptn client %v", err)
+	}
+
+	if action == Install {
+		if err := os.MkdirAll(addResourcePath, 0755); err != nil {
+			log.Fatalf("Failed to create the directory %v with %v", addResourcePath, err)
+		}
+
+		cm := types.NamespacedName{
+			Name:      cmName,
+			Namespace: cmNamespace,
+		}
+		if err := actions.Install(ctx, cancel, addResourcePath, clientSet, keptnCli, cm, interval); err != nil {
+			log.Fatalf("failed to trigger keptn evaluation: %v", err)
+		}
+	} else if action == Delete {
+		if err := actions.Delete(ctx, cancel, clientSet, interval); err != nil {
+			log.Fatalf("failed to cleanup keptn application resources: %v", err)
+		}
+	}
 }
