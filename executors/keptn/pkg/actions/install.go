@@ -3,48 +3,31 @@ package actions
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/keptn"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 )
 
-func Install(ctx context.Context, cancel context.CancelFunc, dir string, clientSet client.Client, keptnCli *keptn.Keptn, cm types.NamespacedName, interval time.Duration) error {
-	obj := &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cm.Name,
-			Namespace: cm.Namespace,
-		},
+const (
+	ShipyardFileName string = "shipyard.yaml"
+)
+
+func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration, data map[string]string, keptnConfig *keptn.KeptnConfig) error {
+	keptnCli, err := keptn.New(keptnConfig.URL, keptnConfig.Namespace, keptnConfig.Token.SecretRef.Name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create the keptn client %w", err)
 	}
-	if err := clientSet.Get(ctx, cm, obj); err != nil {
+
+	shipyard, ok := data[ShipyardFileName]
+	if !ok {
+		return fmt.Errorf("shipyard.yaml not found")
+	}
+
+	// if err := keptnCli.CreateProject(strings.ToLower(hr.Name+"-"+hr.Namespace), bShipyard); err != nil {
+	if err := keptnCli.CreateProject(strings.ToLower("new-evaluation-project"), []byte(shipyard)); err != nil {
 		return err
 	}
-
-	if obj.Data == nil {
-		return fmt.Errorf("configmap data field cannot be nil")
-	}
-
-	if len(obj.Data) == 0 {
-		return fmt.Errorf("configmap data field cannot be empty")
-	}
-
-	for name, contents := range obj.Data {
-		f, err := os.Create(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		if _, err := f.WriteString(contents); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }

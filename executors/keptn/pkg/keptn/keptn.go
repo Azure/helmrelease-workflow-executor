@@ -3,16 +3,17 @@ package keptn
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 
 	// "github.com/keptn/go-utils/pkg/api/models"
 
 	keptnutils "github.com/keptn/go-utils/pkg/api/utils"
 	"github.com/keptn/go-utils/pkg/common/fileutils"
 	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
-	"github.com/labstack/gommon/log"
 
 	apimodels "github.com/keptn/go-utils/pkg/api/models"
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type Git struct {
@@ -45,7 +46,7 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	auth := keptnutils.NewAuthenticatedAuthHandler(url, t, "x-token", nil, "http")
 	if _, kErr := auth.Authenticate(); kErr != nil {
 		err = fmt.Errorf("failed to authenticate with err: %v", kErr)
-		log.Errorf("failed to authenticate with err : %v", kErr.GetMessage())
+		log.Printf("failed to authenticate with err : %v", kErr.GetMessage())
 		return nil, err
 	}
 
@@ -139,4 +140,30 @@ func (k *Keptn) getProjectStages(project string) ([]*apimodels.Stage, error) {
 		return nil, fmt.Errorf("failed to get project with err: %v", kErr.GetMessage())
 	}
 	return p.Stages, nil
+}
+
+type KeptnAPIToken struct {
+	SecretRef *corev1.ObjectReference `json:"secretRef,omitempty"`
+}
+
+type KeptnConfig struct {
+	URL       string        `json:"url,omitempty"`
+	Namespace string        `json:"namespace,omitempty"`
+	Token     KeptnAPIToken `json:"token,omitempty"`
+}
+
+func (k *KeptnConfig) Validate() error {
+	if k.URL == "" {
+		return fmt.Errorf("keptn API server (nginx) cannot be nil")
+	}
+
+	if k.Namespace == "" {
+		return fmt.Errorf("keptn namespace must be specified")
+	}
+
+	if k.Token.SecretRef.Name == "" {
+		return fmt.Errorf("keptn API token secret name must be specified")
+	}
+
+	return nil
 }
