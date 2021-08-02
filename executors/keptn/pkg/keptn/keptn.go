@@ -4,17 +4,41 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"time"
 
 	// "github.com/keptn/go-utils/pkg/api/models"
 
-	keptnutils "github.com/keptn/go-utils/pkg/api/utils"
-	"github.com/keptn/go-utils/pkg/common/fileutils"
 	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
 
 	apimodels "github.com/keptn/go-utils/pkg/api/models"
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// FIXME : These are hardcoded
+const (
+	sliFilename         = "sli.yaml"
+	sliURI              = "prometheus/sli.yaml"
+	sloFilename         = "slo.yaml"
+	sloURI              = "slo.yaml"
+	jobExecutorFilename = "config.yaml"
+	jobExecutorURI      = "job/config.yaml"
+
+	ShipyardFileName string = "shipyard.yaml"
+)
+
+func resourceNameToURI(fname string) string {
+	switch fname {
+	case sliFilename:
+		return sliURI
+	case sloFilename:
+		return sloURI
+	case jobExecutorFilename:
+		return jobExecutorURI
+	default:
+		return fname
+	}
+}
 
 type Git struct {
 	URL   string
@@ -43,7 +67,7 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	}
 
 	// authenticate with the api server
-	auth := keptnutils.NewAuthenticatedAuthHandler(url, t, "x-token", nil, "http")
+	auth := apiutils.NewAuthenticatedAuthHandler(url, t, "x-token", nil, "http")
 	if _, kErr := auth.Authenticate(); kErr != nil {
 		err = fmt.Errorf("failed to authenticate with err: %v", kErr)
 		log.Printf("failed to authenticate with err : %v", kErr.GetMessage())
@@ -64,8 +88,8 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	}, nil
 }
 
-func (k *Keptn) CreateProject(project string, shipyard []byte) error {
-	encodedShipyardContent := base64.StdEncoding.EncodeToString(shipyard)
+func (k *Keptn) CreateProject(project string, shipyard string) error {
+	encodedShipyardContent := base64.StdEncoding.EncodeToString([]byte(shipyard))
 	createProject := apimodels.CreateProject{
 		Name:     &project,
 		Shipyard: &encodedShipyardContent,
@@ -94,14 +118,14 @@ func (k *Keptn) CreateService(service, project string) error {
 	return nil
 }
 
-func (k *Keptn) AddResourceToAllStages(service, project, resourceURI, localResourcePath string) error {
+func (k *Keptn) AddResourceToAllStages(service, project, resourceName, resourceContent string) error {
 	stages, err := k.getProjectStages(project)
 	if err != nil {
 		return err
 	}
 
 	for _, stage := range stages {
-		if err := k.AddResourceToStage(service, project, stage.StageName, resourceURI, localResourcePath); err != nil {
+		if err := k.AddResourceToStage(service, project, stage.StageName, resourceNameToURI(resourceName), resourceContent); err != nil {
 			return err
 		}
 	}
@@ -109,18 +133,38 @@ func (k *Keptn) AddResourceToAllStages(service, project, resourceURI, localResou
 	return nil
 }
 
-func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, localResourcePath string) error {
-	resourceContent, err := fileutils.ReadFileAsStr(localResourcePath)
-	if err != nil {
-		return err
-	}
+func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, resourceContent string) error {
+	encodedResourceContent := base64.StdEncoding.EncodeToString([]byte(resourceContent))
 	resource := &apimodels.Resource{
-		ResourceContent: resourceContent,
+		ResourceContent: encodedResourceContent,
 		ResourceURI:     &resourceURI,
 	}
+
 	if _, err := k.resourceHandler.CreateServiceResources(project, stage, service, []*apimodels.Resource{resource}); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (k *Keptn) TriggerEvaluation(service, project, timeframe string) error {
+	currentTime := time.Now()
+
+	evaluation := apimodels.Evaluation{
+		Start:     currentTime.UTC().Format("2019-10-31T11:59:59"),
+		Timeframe: timeframe,
+	}
+
+	stages, err := k.getProjectStages(project)
+	if err != nil {
+		return err
+	}
+
+	stage := stages[0].StageName
+
+	if _, kErr := k.apiHandler.TriggerEvaluation(project, stage, service, evaluation); kErr != nil {
+		return fmt.Errorf("failed to trigger evaluation with err: %v", kErr.GetMessage())
+	}
+
 	return nil
 }
 
@@ -150,6 +194,7 @@ type KeptnConfig struct {
 	URL       string        `json:"url,omitempty"`
 	Namespace string        `json:"namespace,omitempty"`
 	Token     KeptnAPIToken `json:"token,omitempty"`
+	Timeframe string        `json:"timeframe,omitempty"`
 }
 
 func (k *KeptnConfig) Validate() error {
@@ -163,6 +208,14 @@ func (k *KeptnConfig) Validate() error {
 
 	if k.Token.SecretRef.Name == "" {
 		return fmt.Errorf("keptn API token secret name must be specified")
+	}
+
+	if k.Timeframe == "" {
+		return fmt.Errorf("keptn evaluation timeframe must be specified")
+	}
+
+	if _, err := time.ParseDuration(k.Timeframe); err != nil {
+		return fmt.Errorf("leptn evaluation duration must be similar to the format 5s/2m/1h")
 	}
 
 	return nil

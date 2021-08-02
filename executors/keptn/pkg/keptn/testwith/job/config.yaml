@@ -1,0 +1,11 @@
+apiVersion: v2
+actions:
+  - name: "Run hey"
+    events:
+      - name: "sh.keptn.event.test.triggered"
+    tasks:
+      - name: "Run hey load tests"
+        image: "azureorkestra/hey"
+        cmd: ["hey"]
+        args: ["-z", "5m", "http://webserver.webserver.svc.cluster.local:80/hello"]
+        maxPollDuration: 10000

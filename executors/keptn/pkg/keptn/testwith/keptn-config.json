@@ -1,6 +1,7 @@
 {
-  "url": "http://20.44.82.186/api",
+  "url": "http://52.247.18.168/api",
   "namespace": "orkestra",
+  "timeframe": "5m",
   "token": {
     "secretRef":  {
       "name": "keptn-api-token",
