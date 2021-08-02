@@ -1,0 +1,13 @@
+{
+	"type": "sh.keptn.event.dev.continuousvalidation.triggered",
+	"specversion": "1.0",
+	"source": "test-events",
+	"contenttype": "application/json",
+	"data": {
+		"project": "hey",
+		"stage": "dev",
+		"service": "webservers"
+	}
+}
+
+
