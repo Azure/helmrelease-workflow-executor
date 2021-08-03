@@ -37,6 +37,10 @@ func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1
 		}
 	}
 
+	if err := keptnCli.ConfigureMonitoring(appName, appName, "prometheus"); err != nil {
+		return err
+	}
+
 	if err := keptnCli.TriggerEvaluation(appName, appName, keptnConfig.Timeframe); err != nil {
 		return err
 	}

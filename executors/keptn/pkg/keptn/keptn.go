@@ -2,25 +2,30 @@ package keptn
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"time"
 
 	// "github.com/keptn/go-utils/pkg/api/models"
 
-	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
-
+	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/google/uuid"
 	apimodels "github.com/keptn/go-utils/pkg/api/models"
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
+	keptnlib "github.com/keptn/go-utils/pkg/lib"
+	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // FIXME : These are hardcoded
 const (
-	sliFilename         = "sli.yaml"
-	sliURI              = "prometheus/sli.yaml"
-	sloFilename         = "slo.yaml"
-	sloURI              = "slo.yaml"
+	sliFilename = "sli.yaml"
+	sliURI      = "prometheus/sli.yaml"
+	sloFilename = "slo.yaml"
+	sloURI      = "slo.yaml"
+	// FIXME : job config.yaml should not be base64 encoded
 	jobExecutorFilename = "config.yaml"
 	jobExecutorURI      = "job/config.yaml"
 
@@ -134,7 +139,8 @@ func (k *Keptn) AddResourceToAllStages(service, project, resourceName, resourceC
 }
 
 func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, resourceContent string) error {
-	encodedResourceContent := base64.StdEncoding.EncodeToString([]byte(resourceContent))
+	// encodedResourceContent := base64.StdEncoding.EncodeToString([]byte(resourceContent))
+	encodedResourceContent := resourceContent
 	resource := &apimodels.Resource{
 		ResourceContent: encodedResourceContent,
 		ResourceURI:     &resourceURI,
@@ -146,11 +152,46 @@ func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, resourc
 	return nil
 }
 
+func (k *Keptn) ConfigureMonitoring(project, service, monitoringType string) error {
+	configureMonitoringEventData := &keptnlib.ConfigureMonitoringEventData{
+		Type:    monitoringType,
+		Project: project,
+		Service: service,
+	}
+
+	source, _ := url.Parse("https://github.com/keptn/keptn/cli#configuremonitoring")
+
+	sdkEvent := cloudevents.NewEvent()
+	sdkEvent.SetID(uuid.New().String())
+	sdkEvent.SetType(keptnlib.ConfigureMonitoringEventType)
+	sdkEvent.SetSource(source.String())
+	sdkEvent.SetDataContentType(cloudevents.ApplicationJSON)
+	sdkEvent.SetData(cloudevents.ApplicationJSON, configureMonitoringEventData)
+
+	eventByte, err := json.Marshal(sdkEvent)
+	if err != nil {
+		return fmt.Errorf("Failed to marshal cloud event. %s", err.Error())
+	}
+
+	apiEvent := apimodels.KeptnContextExtendedCE{}
+	err = json.Unmarshal(eventByte, &apiEvent)
+	if err != nil {
+		return fmt.Errorf("Failed to map cloud event to API event model. %s", err.Error())
+	}
+
+	_, kErr := k.apiHandler.SendEvent(apiEvent)
+	if err != nil {
+		return fmt.Errorf("Sending configure-monitoring event was unsuccessful. %s", *kErr.Message)
+	}
+
+	return nil
+}
+
 func (k *Keptn) TriggerEvaluation(service, project, timeframe string) error {
 	currentTime := time.Now()
 
 	evaluation := apimodels.Evaluation{
-		Start:     currentTime.UTC().Format("2019-10-31T11:59:59"),
+		Start:     currentTime.UTC().Format("2006-01-02T15:04:05"),
 		Timeframe: timeframe,
 	}
 

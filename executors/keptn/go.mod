@@ -4,7 +4,9 @@ go 1.16
 
 require (
 	code.gitea.io/sdk/gitea v0.14.1
+	github.com/cloudevents/sdk-go/v2 v2.4.1
 	github.com/fluxcd/helm-controller/api v0.10.0
+	github.com/google/uuid v1.2.0
 	github.com/keptn/go-utils v0.8.5
 	github.com/keptn/kubernetes-utils v0.8.3
 	github.com/sirupsen/logrus v1.8.1
