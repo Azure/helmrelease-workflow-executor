@@ -4,13 +4,11 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"time"
 
 	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/actions"
-	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/keptn"
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 	"sigs.k8s.io/yaml"
 
@@ -25,9 +23,8 @@ import (
 
 const (
 	// The set of executor actions which can be performed on a helmrelease object
-	Install             ExecutorAction = "install"
-	Delete              ExecutorAction = "delete"
-	KeptnConfigFileName string         = "keptn-config.json"
+	Install ExecutorAction = "install"
+	Delete  ExecutorAction = "delete"
 )
 
 // ExecutorAction defines the set of executor actions which can be performed on a helmrelease object
@@ -114,24 +111,7 @@ func main() {
 	}
 
 	if action == Install {
-
-		keptnConfig := &keptn.KeptnConfig{}
-
-		// Read the keptn-config.yaml file.
-		// This file is required and cannot have empty fields
-		if v, ok := configmapObj.Data[KeptnConfigFileName]; !ok {
-			log.Fatalf("failed to read plugin configuration from configmap")
-		} else {
-			if err := json.Unmarshal([]byte(v), keptnConfig); err != nil {
-				log.Fatalf("failed to unmarshal the keptn configuration file into KeptnConfig object")
-			}
-		}
-
-		if err = keptnConfig.Validate(); err != nil {
-			log.Fatalf("keptn configuration is invalid : %v", err)
-		}
-
-		if err := actions.Install(ctx, cancel, hr, interval, configmapObj.Data, keptnConfig); err != nil {
+		if err := actions.Install(ctx, cancel, hr, interval, configmapObj.Data); err != nil {
 			log.Fatalf("failed to trigger keptn evaluation: %v", err)
 		}
 	} else if action == Delete {

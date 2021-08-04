@@ -29,7 +29,8 @@ const (
 	jobExecutorFilename = "config.yaml"
 	jobExecutorURI      = "job/config.yaml"
 
-	ShipyardFileName string = "shipyard.yaml"
+	ShipyardFileName    string = "shipyard.yaml"
+	KeptnConfigFileName string = "keptn-config.json"
 )
 
 func resourceNameToURI(fname string) string {
@@ -66,7 +67,7 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	}
 
 	// get token from secret
-	t, err := keptnk8sutils.GetKeptnAPITokenFromSecret(false, namespace, secretName)
+	t, err := keptnk8sutils.GetKeptnAPITokenFromSecret(true, namespace, secretName)
 	if err != nil {
 		return nil, err
 	}

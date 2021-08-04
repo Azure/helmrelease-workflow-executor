@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -10,7 +11,23 @@ import (
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 )
 
-func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration, data map[string]string, keptnConfig *keptn.KeptnConfig) error {
+func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration, data map[string]string) error {
+	keptnConfig := &keptn.KeptnConfig{}
+
+	// Read the keptn-config.yaml file.
+	// This file is required and cannot have empty fields
+	if v, ok := data[keptn.KeptnConfigFileName]; !ok {
+		return fmt.Errorf("failed to read plugin configuration from configmap")
+	} else {
+		if err := json.Unmarshal([]byte(v), keptnConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal the keptn configuration file into KeptnConfig object")
+		}
+	}
+
+	if err := keptnConfig.Validate(); err != nil {
+		return err
+	}
+
 	keptnCli, err := keptn.New(keptnConfig.URL, keptnConfig.Namespace, keptnConfig.Token.SecretRef.Name, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create the keptn client %w", err)
