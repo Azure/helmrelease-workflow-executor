@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/keptn"
+	"github.com/Azure/orkestra-workflow-executor/executors/keptn/pkg/status"
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 )
 
@@ -58,8 +59,35 @@ func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1
 		return err
 	}
 
-	if err := keptnCli.TriggerEvaluation(appName, appName, keptnConfig.Timeframe); err != nil {
+	keptnCtx, err := keptnCli.TriggerEvaluation(appName, appName, keptnConfig.Timeframe)
+	if err != nil {
 		return err
+	}
+
+	// if err := status.Retry(ctx, func() error { return createOrUpdateFunc() }, interval); err != nil {
+	// return fmt.Errorf("retry got error: %w", err)
+	// }
+	if err := pollStatus(ctx, keptnCli, keptnCtx, interval, 5); err != nil {
+		return fmt.Errorf("failed to poll status with: %w", err)
+	}
+	return nil
+}
+
+func pollStatus(ctx context.Context, keptnCli *keptn.Keptn, keptnCtx string, interval time.Duration, retrySeconds int) error {
+	statusPoller := func(done chan<- bool) {
+		start := time.Now()
+		defer func() {
+			fmt.Printf("polling status finished execution in %v", time.Now().Sub(start))
+		}()
+
+		// lookup keptn evaluation triggered event status
+
+		done <- true
+	}
+
+	// Poll the helm release condition consecutively until the timeout
+	if err := status.Poll(ctx, statusPoller, interval); err != nil {
+		return fmt.Errorf("timed out waiting for condition")
 	}
 	return nil
 }

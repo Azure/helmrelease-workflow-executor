@@ -203,7 +203,7 @@ func (k *Keptn) ConfigureMonitoring(project, service, monitoringType string) err
 	return nil
 }
 
-func (k *Keptn) TriggerEvaluation(service, project, timeframe string) error {
+func (k *Keptn) TriggerEvaluation(service, project, timeframe string) (string, error) {
 	currentTime := time.Now()
 
 	evaluation := apimodels.Evaluation{
@@ -213,18 +213,16 @@ func (k *Keptn) TriggerEvaluation(service, project, timeframe string) error {
 
 	stages, err := k.getProjectStages(project)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	stage := stages[0].StageName
 
-	if eventCtx, kErr := k.apiHandler.TriggerEvaluation(project, stage, service, evaluation); kErr != nil {
-		return fmt.Errorf("failed to trigger evaluation with err: %v", kErr.GetMessage())
-	} else if eventCtx != nil {
-		_ = *eventCtx.KeptnContext
+	eventCtx, kErr := k.apiHandler.TriggerEvaluation(project, stage, service, evaluation)
+	if kErr != nil {
+		return "", fmt.Errorf("failed to trigger evaluation with err: %v", kErr.GetMessage())
 	}
-
-	return nil
+	return *eventCtx.KeptnContext, nil
 }
 
 func (k *Keptn) getProjectStages(project string) ([]*apimodels.Stage, error) {
