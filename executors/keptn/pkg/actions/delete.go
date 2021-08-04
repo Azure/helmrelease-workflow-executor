@@ -8,5 +8,5 @@ import (
 )
 
 func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, interval time.Duration) error {
-	panic("not implemented")
+	return nil
 }
