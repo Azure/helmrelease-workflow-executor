@@ -115,7 +115,7 @@ func main() {
 			log.Fatalf("failed to trigger keptn evaluation: %v", err)
 		}
 	} else if action == Delete {
-		if err := actions.Delete(ctx, cancel, clientSet, interval); err != nil {
+		if err := actions.Delete(ctx, cancel, clientSet, hr, interval, configmapObj.Data); err != nil {
 			log.Fatalf("failed to cleanup keptn application resources: %v", err)
 		}
 	}

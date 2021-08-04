@@ -33,6 +33,10 @@ const (
 	KeptnConfigFileName string = "keptn-config.json"
 )
 
+var (
+	ErrFailedDeleteProject = fmt.Errorf("failed to delete project")
+)
+
 func resourceNameToURI(fname string) string {
 	switch fname {
 	case sliFilename:
@@ -114,6 +118,17 @@ func (k *Keptn) CreateProject(project string, shipyard string) error {
 	return nil
 }
 
+func (k *Keptn) DeleteProject(project string) error {
+	p := apimodels.Project{
+		ProjectName: project,
+	}
+
+	if _, kErr := k.apiHandler.DeleteProject(p); kErr != nil {
+		return fmt.Errorf("%v : %w", kErr.GetMessage(), ErrFailedDeleteProject)
+	}
+
+	return nil
+}
 func (k *Keptn) CreateService(service, project string) error {
 	if _, kErr := k.apiHandler.CreateService(project, apimodels.CreateService{
 		ServiceName: &service,
@@ -203,8 +218,10 @@ func (k *Keptn) TriggerEvaluation(service, project, timeframe string) error {
 
 	stage := stages[0].StageName
 
-	if _, kErr := k.apiHandler.TriggerEvaluation(project, stage, service, evaluation); kErr != nil {
+	if eventCtx, kErr := k.apiHandler.TriggerEvaluation(project, stage, service, evaluation); kErr != nil {
 		return fmt.Errorf("failed to trigger evaluation with err: %v", kErr.GetMessage())
+	} else if eventCtx != nil {
+		_ = *eventCtx.KeptnContext
 	}
 
 	return nil
