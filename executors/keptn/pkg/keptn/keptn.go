@@ -35,6 +35,7 @@ const (
 
 var (
 	ErrFailedDeleteProject = fmt.Errorf("failed to delete project")
+	ErrEvaluationFailed    = fmt.Errorf("evaluation result shows failure")
 )
 
 func resourceNameToURI(fname string) string {
@@ -63,6 +64,7 @@ type Keptn struct {
 	apiHandler      *apiutils.APIHandler
 	resourceHandler *apiutils.ResourceHandler
 	projectHandler  *apiutils.ProjectHandler
+	eventHandler    *apiutils.EventHandler
 }
 
 func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
@@ -87,6 +89,7 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	apiHandler := apiutils.NewAuthenticatedAPIHandler(url, t, "x-token", nil, "http")
 	resourceHandler := apiutils.NewAuthenticatedResourceHandler(url, t, "x-token", nil, "http")
 	projectHandler := apiutils.NewAuthenticatedProjectHandler(url, t, "x-token", nil, "http")
+	eventHandler := apiutils.NewAuthenticatedEventHandler(url, t, "x-token", nil, "http")
 
 	return &Keptn{
 		url:             url,
@@ -94,6 +97,7 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 		apiHandler:      apiHandler,
 		resourceHandler: resourceHandler,
 		projectHandler:  projectHandler,
+		eventHandler:    eventHandler,
 		git:             git,
 	}, nil
 }
@@ -186,21 +190,48 @@ func (k *Keptn) ConfigureMonitoring(project, service, monitoringType string) err
 
 	eventByte, err := json.Marshal(sdkEvent)
 	if err != nil {
-		return fmt.Errorf("Failed to marshal cloud event. %s", err.Error())
+		return fmt.Errorf("failed to marshal cloud event. %s", err.Error())
 	}
 
 	apiEvent := apimodels.KeptnContextExtendedCE{}
 	err = json.Unmarshal(eventByte, &apiEvent)
 	if err != nil {
-		return fmt.Errorf("Failed to map cloud event to API event model. %s", err.Error())
+		return fmt.Errorf("failed to map cloud event to API event model. %s", err.Error())
 	}
 
 	_, kErr := k.apiHandler.SendEvent(apiEvent)
 	if err != nil {
-		return fmt.Errorf("Sending configure-monitoring event was unsuccessful. %s", *kErr.Message)
+		return fmt.Errorf("sending configure-monitoring event was unsuccessful. %s", *kErr.Message)
 	}
 
 	return nil
+}
+
+func (k *Keptn) GetEvents(service, project, keptnCtx string) error {
+	filter := &apiutils.EventFilter{
+		Project:      project,
+		Service:      service,
+		KeptnContext: keptnCtx,
+		EventType:    "sh.keptn.event.evaluation.finished",
+	}
+
+	eventsCtx, kErr := k.eventHandler.GetEvents(filter)
+	if kErr != nil {
+		return fmt.Errorf("failed to get events for keptn context %s. %s", keptnCtx, *kErr.Message)
+	}
+
+	if len(eventsCtx) != 1 {
+		return fmt.Errorf("expected to see one event of type %s", filter.EventType)
+	}
+
+	if dataMap, ok := eventsCtx[0].Data.(map[string]interface{}); ok {
+		result := dataMap["result"].(string)
+		if result == "pass" {
+			return nil
+		}
+		return ErrEvaluationFailed
+	}
+	return fmt.Errorf("event context data expected to be of type map[string]interface{}")
 }
 
 func (k *Keptn) TriggerEvaluation(service, project, timeframe string) (string, error) {

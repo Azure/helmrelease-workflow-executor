@@ -6,6 +6,8 @@ actions:
     tasks:
       - name: "Run hey load tests"
         image: "azureorkestra/hey"
+        # hey -z 5m "http://webserver.webserver.svc.cluster.local:80/hello"
+        # GET "http://webserver.webserver.svc.cluster.local:80/hello" loadtest
         cmd: ["hey"]
         args: ["-z", "5m", "http://webserver.webserver.svc.cluster.local:80/hello"]
         maxPollDuration: 10000

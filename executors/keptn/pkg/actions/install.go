@@ -3,7 +3,9 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -67,20 +69,28 @@ func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1
 	// if err := status.Retry(ctx, func() error { return createOrUpdateFunc() }, interval); err != nil {
 	// return fmt.Errorf("retry got error: %w", err)
 	// }
-	if err := pollStatus(ctx, keptnCli, keptnCtx, interval, 5); err != nil {
+	if err := pollStatus(ctx, keptnCli, keptnCtx, appName, appName, interval, 5); err != nil {
 		return fmt.Errorf("failed to poll status with: %w", err)
 	}
 	return nil
 }
 
-func pollStatus(ctx context.Context, keptnCli *keptn.Keptn, keptnCtx string, interval time.Duration, retrySeconds int) error {
+func pollStatus(ctx context.Context, keptnCli *keptn.Keptn, keptnCtx, project, service string, interval time.Duration, retrySeconds int) error {
 	statusPoller := func(done chan<- bool) {
 		start := time.Now()
 		defer func() {
-			fmt.Printf("polling status finished execution in %v", time.Now().Sub(start))
+			fmt.Printf("polling status finished execution in %v\n", time.Now().Sub(start))
 		}()
 
+		// fmt.Printf("Looking up event with keptnCtx : %s\n", keptnCtx)
 		// lookup keptn evaluation triggered event status
+		if err := keptnCli.GetEvents(service, project, keptnCtx); err != nil {
+			if errors.Is(err, keptn.ErrEvaluationFailed) {
+				fmt.Printf("evaluation failed with error : %v\n", err)
+				log.Fatalf(err.Error())
+			}
+			return
+		}
 
 		done <- true
 	}
