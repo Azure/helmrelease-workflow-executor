@@ -17,12 +17,27 @@ jobs:
         name: Checkout
         uses: actions/checkout@v2
       -
-        name: Docker meta
-        id: meta
+        name: Docker meta for default
+        id: meta-default
         uses: crazy-max/ghaction-docker-meta@v2
         with:
           # list of Docker images to use as base name for tags
           images: azureorkestra/executor
+          # generate Docker tags based on the following events/attributes
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{raw}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            latest
+      -
+        name: Docker meta for keptn
+        id: meta-keptn
+        uses: crazy-max/ghaction-docker-meta@v2
+        with:
+          # list of Docker images to use as base name for tags
+          images: azureorkestra/keptn-executor
           # generate Docker tags based on the following events/attributes
           tags: |
             type=ref,event=branch
@@ -39,9 +54,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       -
-        name: Build and push
+        name: Build and push default
         uses: docker/build-push-action@v2
         with:
           context: ./executors/default
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta-default.outputs.tags }}
+      -
+        name: Build and push keptn
+        uses: docker/build-push-action@v2
+        with:
+          context: ./executors/keptn
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-keptn.outputs.tags }}
