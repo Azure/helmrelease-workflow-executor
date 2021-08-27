@@ -102,20 +102,39 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 	}, nil
 }
 
-func (k *Keptn) CreateProject(project string, shipyard string) error {
+func (k *Keptn) CreateOrUpdateProject(project string, shipyard string) error {
 	encodedShipyardContent := base64.StdEncoding.EncodeToString([]byte(shipyard))
-	createProject := apimodels.CreateProject{
+	projectInfo := apimodels.CreateProject{
 		Name:     &project,
 		Shipyard: &encodedShipyardContent,
 	}
 
-	if k.git != nil {
-		createProject.GitRemoteURL = k.git.URL
-		createProject.GitToken = k.git.Token
-		createProject.GitUser = k.git.User
+	projectGetInfo := apimodels.Project{
+		ProjectName: project,
 	}
 
-	if _, kErr := k.apiHandler.CreateProject(createProject); kErr != nil {
+	if k.git != nil {
+		projectInfo.GitRemoteURL = k.git.URL
+		projectInfo.GitToken = k.git.Token
+		projectInfo.GitUser = k.git.User
+
+		projectGetInfo.GitRemoteURI = k.git.URL
+		projectGetInfo.GitToken = k.git.Token
+		projectGetInfo.GitUser = k.git.User
+	}
+
+	if _, kErr := k.projectHandler.GetProject(apimodels.Project{
+		ProjectName:     project,
+		ShipyardVersion: shipyard,
+		Stages:          []*apimodels.Stage{},
+	}); kErr == nil {
+		fmt.Println("found the project - deleting it now")
+		if _, kErr := k.apiHandler.DeleteProject(projectGetInfo); kErr != nil {
+			return fmt.Errorf("failed to delete project with err: %v", kErr.GetMessage())
+		}
+	}
+
+	if _, kErr := k.apiHandler.CreateProject(projectInfo); kErr != nil {
 		return fmt.Errorf("failed to create project with err: %v", kErr.GetMessage())
 	}
 

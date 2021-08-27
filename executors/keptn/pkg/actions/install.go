@@ -42,7 +42,7 @@ func Install(ctx context.Context, cancel context.CancelFunc, hr *fluxhelmv2beta1
 	}
 
 	appName := strings.ToLower(hr.Name + "-" + hr.Namespace)
-	if err := keptnCli.CreateProject(appName, shipyard); err != nil {
+	if err := keptnCli.CreateOrUpdateProject(appName, shipyard); err != nil {
 		// if err := keptnCli.CreateProject(strings.ToLower("new-evaluation-project"), []byte(shipyard)); err != nil {
 		return err
 	}
