@@ -26,7 +26,8 @@ func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Cli
 	} else if err != nil {
 		// Unexpectedly, the object that we are trying to delete was not found
 		// If this happens, we will log an error and return
-		return fmt.Errorf("did not find the helm release %s with: %w", hr.Name, err)
+		log.Infof("did not find the helm release %s so no need to call delete", hr.Name)
+		return nil
 	} else {
 		log.Infof("Found the helm release: %v, deleting the release...", hr.Name)
 		// Delete the HelmRelease
