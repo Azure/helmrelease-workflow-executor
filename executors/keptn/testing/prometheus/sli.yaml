@@ -1,0 +1,4 @@
+spec_version: "1.0"
+indicators:
+  error_percentage: "(sum(rate(webserver_errors{}[$DURATION_SECONDS])) / sum(rate(webserver_requests{}[$DURATION_SECONDS])) * 100) > 0 or on() vector(0)"
+  response_time_p99: "histogram_quantile(0.99, rate(webserver_request_duration_seconds_bucket{}[$DURATION_SECONDS])) > 0.02 and rate(webserver_request_duration_seconds_count{}[$DURATION_SECONDS]) > 1 or on() vector(0)"

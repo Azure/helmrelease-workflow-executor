@@ -10,7 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: golangci-lint
+      - name: golangci-lint-default
         uses: golangci/golangci-lint-action@v2
         with:
           working-directory: ./executors/default
+      - name: golangci-lint-keptn
+        uses: golangci/golangci-lint-action@v2
+        with:
+          working-directory: ./executors/keptn
