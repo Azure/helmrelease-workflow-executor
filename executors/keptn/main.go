@@ -1,6 +1,5 @@
 package main
 
-// https://socialsign.in/spot?nbiIP=100.124.9.55&loc=4176656e74696e65&client_mac=38:F9:D3:B5:DD:FB&domain_name=San+Diego&reason=Un-Auth-Captive&lid=network%3Dsd02&wlanName=WeWorkGuest&dn=scg.ruckuswireless.com&ssid=WeWorkGuest&mac=44:1e:98:39:aa:b0&url=http%3A%2F%2F10.239.22.1%2F&proxy=0&vlan=22&wlan=19&sip=scg.ruckuswireless.com&zoneName=tS-IA_qoXMRjSxWeD6KI8A_1627936773232&apip=10.239.12.175&sshTunnelStatus=1&uip=10.239.22.176&StartURL=https%3A%2F%2Fsocialsign.in%2Fspot%2Fsuccess
 import (
 	"context"
 	"encoding/base64"
@@ -74,7 +73,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{})
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), nil)
 	config, err := kubeConfig.ClientConfig()
 	if err != nil {
 		log.Fatalf("Failed to initialize the client config with %v", err)

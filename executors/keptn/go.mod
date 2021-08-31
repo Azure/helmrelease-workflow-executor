@@ -24,6 +24,4 @@ require (
 replace (
 	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
 	github.com/docker/docker => github.com/moby/moby v1.4.2-0.20200203170920-46ec8731fbce
-// k8s.io/api => k8s.io/api v0.20.2
-// k8s.io/client-go => k8s.io/client-go v0.20.2
 )

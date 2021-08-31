@@ -14,7 +14,7 @@ import (
 )
 
 func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Client, hr *fluxhelmv2beta1.HelmRelease, interval time.Duration, data map[string]string) error {
-	keptnConfig := &keptn.KeptnConfig{}
+	keptnConfig := &keptn.Config{}
 
 	// Read the keptn-config.yaml file.
 	// This file is required and cannot have empty fields
@@ -23,7 +23,7 @@ func Delete(ctx context.Context, cancel context.CancelFunc, clientSet client.Cli
 		return fmt.Errorf("failed to read plugin configuration from configmap")
 	}
 	if err := json.Unmarshal([]byte(v), keptnConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal the keptn configuration file into KeptnConfig object")
+		return fmt.Errorf("failed to unmarshal the keptn configuration file into Config object")
 	}
 
 	if err := keptnConfig.Validate(); err != nil {

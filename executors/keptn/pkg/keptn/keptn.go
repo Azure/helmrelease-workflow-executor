@@ -16,46 +16,12 @@ import (
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
 	keptnlib "github.com/keptn/go-utils/pkg/lib"
 	keptnk8sutils "github.com/keptn/kubernetes-utils/pkg"
-	corev1 "k8s.io/api/core/v1"
-)
-
-// FIXME : These are hardcoded
-const (
-	sliFilename = "sli.yaml"
-	sliURI      = "prometheus/sli.yaml"
-	sloFilename = "slo.yaml"
-	sloURI      = "slo.yaml"
-	// FIXME : job config.yaml should not be base64 encoded
-	jobExecutorFilename = "config.yaml"
-	jobExecutorURI      = "job/config.yaml"
-
-	ShipyardFileName    string = "shipyard.yaml"
-	KeptnConfigFileName string = "keptn-config.json"
 )
 
 var (
 	ErrFailedDeleteProject = fmt.Errorf("failed to delete project")
 	ErrEvaluationFailed    = fmt.Errorf("evaluation result shows failure")
 )
-
-func resourceNameToURI(fname string) string {
-	switch fname {
-	case sliFilename:
-		return sliURI
-	case sloFilename:
-		return sloURI
-	case jobExecutorFilename:
-		return jobExecutorURI
-	default:
-		return fname
-	}
-}
-
-type Git struct {
-	URL   string
-	Token string
-	User  string
-}
 
 type Keptn struct {
 	url             string
@@ -78,18 +44,10 @@ func New(url, namespace, secretName string, git *Git) (*Keptn, error) {
 		return nil, err
 	}
 
-	// authenticate with the api server
-	auth := apiutils.NewAuthenticatedAuthHandler(url, t, "x-token", nil, "http")
-	if _, kErr := auth.Authenticate(); kErr != nil {
-		err = fmt.Errorf("failed to authenticate with err: %v", kErr)
-		log.Printf("failed to authenticate with err : %v", kErr.GetMessage())
-		return nil, err
-	}
-
-	apiHandler := apiutils.NewAuthenticatedAPIHandler(url, t, "x-token", nil, "http")
-	resourceHandler := apiutils.NewAuthenticatedResourceHandler(url, t, "x-token", nil, "http")
-	projectHandler := apiutils.NewAuthenticatedProjectHandler(url, t, "x-token", nil, "http")
-	eventHandler := apiutils.NewAuthenticatedEventHandler(url, t, "x-token", nil, "http")
+	apiHandler := apiutils.NewAuthenticatedAPIHandler(url, t, KeptnAuthTokenKey, nil, HTTPTransportProtocol)
+	resourceHandler := apiutils.NewAuthenticatedResourceHandler(url, t, KeptnAuthTokenKey, nil, HTTPTransportProtocol)
+	projectHandler := apiutils.NewAuthenticatedProjectHandler(url, t, KeptnAuthTokenKey, nil, HTTPTransportProtocol)
+	eventHandler := apiutils.NewAuthenticatedEventHandler(url, t, KeptnAuthTokenKey, nil, HTTPTransportProtocol)
 
 	return &Keptn{
 		url:             url,
@@ -123,6 +81,10 @@ func (k *Keptn) CreateOrUpdateProject(project string, shipyard string) error {
 		projectGetInfo.GitUser = k.git.User
 	}
 
+	// FIXME: address comment
+	// What happens if the Get call fails due to an actual error but the job exists?
+	// Nitish Malhotra (08/31) - Error code lookup table is not provided by keptn.
+	// There is no way to differentiate between errors unfortunately
 	if _, kErr := k.projectHandler.GetProject(apimodels.Project{
 		ProjectName:     project,
 		ShipyardVersion: shipyard,
@@ -152,6 +114,7 @@ func (k *Keptn) DeleteProject(project string) error {
 
 	return nil
 }
+
 func (k *Keptn) CreateService(service, project string) error {
 	if _, kErr := k.apiHandler.CreateService(project, apimodels.CreateService{
 		ServiceName: &service,
@@ -178,10 +141,8 @@ func (k *Keptn) AddResourceToAllStages(service, project, resourceName, resourceC
 }
 
 func (k *Keptn) AddResourceToStage(service, project, stage, resourceURI, resourceContent string) error {
-	// encodedResourceContent := base64.StdEncoding.EncodeToString([]byte(resourceContent))
-	encodedResourceContent := resourceContent
 	resource := &apimodels.Resource{
-		ResourceContent: encodedResourceContent,
+		ResourceContent: resourceContent,
 		ResourceURI:     &resourceURI,
 	}
 
@@ -291,39 +252,4 @@ func (k *Keptn) getProjectStages(project string) ([]*apimodels.Stage, error) {
 		return nil, fmt.Errorf("failed to get project with err: %v", kErr.GetMessage())
 	}
 	return p.Stages, nil
-}
-
-type KeptnAPIToken struct {
-	SecretRef *corev1.ObjectReference `json:"secretRef,omitempty"`
-}
-
-type KeptnConfig struct {
-	URL       string        `json:"url,omitempty"`
-	Namespace string        `json:"namespace,omitempty"`
-	Token     KeptnAPIToken `json:"token,omitempty"`
-	Timeframe string        `json:"timeframe,omitempty"`
-}
-
-func (k *KeptnConfig) Validate() error {
-	if k.URL == "" {
-		return fmt.Errorf("keptn API server (nginx) cannot be nil")
-	}
-
-	if k.Namespace == "" {
-		return fmt.Errorf("keptn namespace must be specified")
-	}
-
-	if k.Token.SecretRef.Name == "" {
-		return fmt.Errorf("keptn API token secret name must be specified")
-	}
-
-	if k.Timeframe == "" {
-		return fmt.Errorf("keptn evaluation timeframe must be specified")
-	}
-
-	if _, err := time.ParseDuration(k.Timeframe); err != nil {
-		return fmt.Errorf("leptn evaluation duration must be similar to the format 5s/2m/1h")
-	}
-
-	return nil
 }
