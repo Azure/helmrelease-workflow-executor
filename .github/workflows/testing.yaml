@@ -7,7 +7,7 @@ on:
 jobs:
   testing:
     env:
-      working-directory: ./executors/default
+      working-directory: .
     runs-on: ubuntu-latest
     strategy:
       matrix:

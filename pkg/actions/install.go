@@ -3,7 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/orkestra-workflow-executor/executors/default/pkg/status"
+	"github.com/Azure/helmrelease-workflow-executor/pkg/status"
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/pkg/apis/meta"
 	log "github.com/sirupsen/logrus"

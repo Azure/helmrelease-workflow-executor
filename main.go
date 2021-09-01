@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/Azure/orkestra-workflow-executor/executors/default/pkg/actions"
+	"github.com/Azure/helmrelease-workflow-executor/pkg/actions"
 	"time"
 
 	fluxhelmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
