@@ -1,4 +1,4 @@
-module github.com/Azure/orkestra-workflow-executor/executors/default
+module github.com/Azure/helmrelease-workflow-executor
 
 go 1.16
 
